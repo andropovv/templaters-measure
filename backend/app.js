@@ -5,7 +5,14 @@ const { ENGINES, benchmark } = require('./engines');
 
 const app = express();
 
-app.use(cors());
+const corsOptions = {
+  origin: '*',
+  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type'],
+};
+
+app.use(cors(corsOptions));
+app.options(/(.*)/, cors(corsOptions)); // preflight для всех маршрутов
 app.use(express.json());
 
 app.get('/api/engines', (req, res) => {

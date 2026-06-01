@@ -1,8 +1,14 @@
 const app = require('./app');
 const { initDb } = require('./db');
 
-const PORT = process.env.PORT || 3001;
+// Vercel serverless: таблица создаётся при холодном старте (идемпотентно)
+initDb().catch(console.error);
 
-initDb()
-  .then(() => app.listen(PORT, () => console.log(`Бэкенд запущен: http://localhost:${PORT}`)))
-  .catch(err => { console.error('Ошибка инициализации БД:', err); process.exit(1); });
+// Экспорт для Vercel (@vercel/node требует module.exports = handler)
+module.exports = app;
+
+// Локальный запуск
+if (require.main === module) {
+  const PORT = process.env.PORT || 3001;
+  app.listen(PORT, () => console.log(`Бэкенд запущен: http://localhost:${PORT}`));
+}
