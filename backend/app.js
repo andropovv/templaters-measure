@@ -1,26 +1,9 @@
 const express = require('express');
 const cors = require('cors');
-const Database = require('better-sqlite3');
-const path = require('path');
+const { query } = require('./db');
 const { ENGINES, benchmark } = require('./engines');
 
 const app = express();
-
-// Use in-memory DB for tests, file DB otherwise
-const dbPath = process.env.TEST_DB || path.join(__dirname, 'measurements.db');
-const db = new Database(dbPath);
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS measurements (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    engine TEXT NOT NULL,
-    template TEXT NOT NULL,
-    data TEXT NOT NULL,
-    result TEXT,
-    duration_ms REAL NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )
-`);
 
 app.use(cors());
 app.use(express.json());
@@ -34,13 +17,12 @@ app.get('/api/engines', (req, res) => {
   res.json(list);
 });
 
-app.post('/api/render', (req, res) => {
+app.post('/api/render', async (req, res) => {
   const { engine, template, data, iterations = 100 } = req.body;
 
   if (!engine || !template || !data) {
     return res.status(400).json({ error: 'engine, template и data обязательны' });
   }
-
   if (!ENGINES[engine]) {
     return res.status(400).json({ error: `Неизвестный шаблонизатор: ${engine}` });
   }
@@ -55,54 +37,62 @@ app.post('/api/render', (req, res) => {
   try {
     const { result, duration_ms } = benchmark(engine, template, parsedData, iterations);
 
-    const info = db
-      .prepare('INSERT INTO measurements (engine, template, data, result, duration_ms) VALUES (?, ?, ?, ?, ?)')
-      .run(engine, template, JSON.stringify(parsedData), result, duration_ms);
+    const { rows } = await query(
+      'INSERT INTO measurements (engine, template, data, result, duration_ms) VALUES ($1,$2,$3,$4,$5) RETURNING id',
+      [engine, template, JSON.stringify(parsedData), result, duration_ms]
+    );
 
-    res.json({
-      id: info.lastInsertRowid,
-      engine,
-      engineName: ENGINES[engine].name,
-      result,
-      duration_ms,
-      iterations,
-    });
+    res.json({ id: rows[0].id, engine, engineName: ENGINES[engine].name, result, duration_ms, iterations });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/api/measurements', (req, res) => {
+app.get('/api/measurements', async (req, res) => {
   const limit = parseInt(req.query.limit) || 50;
   const engine = req.query.engine;
 
-  const rows = engine
-    ? db.prepare('SELECT * FROM measurements WHERE engine = ? ORDER BY id DESC LIMIT ?').all(engine, limit)
-    : db.prepare('SELECT * FROM measurements ORDER BY id DESC LIMIT ?').all(limit);
+  try {
+    const { rows } = engine
+      ? await query('SELECT * FROM measurements WHERE engine=$1 ORDER BY id DESC LIMIT $2', [engine, limit])
+      : await query('SELECT * FROM measurements ORDER BY id DESC LIMIT $1', [limit]);
 
-  rows.forEach(r => { r.data = JSON.parse(r.data); });
-  res.json(rows);
+    rows.forEach(r => { r.data = JSON.parse(r.data); });
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.get('/api/stats', (req, res) => {
-  const rows = db.prepare(`
-    SELECT engine, COUNT(*) as count,
-      AVG(duration_ms) as avg_ms, MIN(duration_ms) as min_ms, MAX(duration_ms) as max_ms
-    FROM measurements GROUP BY engine ORDER BY avg_ms ASC
-  `).all();
+app.get('/api/stats', async (req, res) => {
+  try {
+    const { rows } = await query(`
+      SELECT engine, COUNT(*)::int as count,
+        ROUND(AVG(duration_ms)::numeric, 3) as avg_ms,
+        ROUND(MIN(duration_ms)::numeric, 3) as min_ms,
+        ROUND(MAX(duration_ms)::numeric, 3) as max_ms
+      FROM measurements GROUP BY engine ORDER BY avg_ms ASC
+    `);
 
-  res.json(rows.map(r => ({
-    ...r,
-    engineName: ENGINES[r.engine]?.name || r.engine,
-    avg_ms: parseFloat(r.avg_ms.toFixed(3)),
-    min_ms: parseFloat(r.min_ms.toFixed(3)),
-    max_ms: parseFloat(r.max_ms.toFixed(3)),
-  })));
+    res.json(rows.map(r => ({
+      ...r,
+      engineName: ENGINES[r.engine]?.name || r.engine,
+      avg_ms: parseFloat(r.avg_ms),
+      min_ms: parseFloat(r.min_ms),
+      max_ms: parseFloat(r.max_ms),
+    })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.delete('/api/measurements', (req, res) => {
-  db.prepare('DELETE FROM measurements').run();
-  res.json({ ok: true });
+app.delete('/api/measurements', async (req, res) => {
+  try {
+    await query('DELETE FROM measurements');
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = app;

@@ -1,18 +1,31 @@
-const Database = require('better-sqlite3');
-const path = require('path');
+const { Pool } = require('pg');
 
-const db = new Database(path.join(__dirname, 'measurements.db'));
+const pool = new Pool({
+  connectionString: process.env.POSTGRES_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS measurements (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    engine TEXT NOT NULL,
-    template TEXT NOT NULL,
-    data TEXT NOT NULL,
-    result TEXT,
-    duration_ms REAL NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )
-`);
+async function query(text, params) {
+  const client = await pool.connect();
+  try {
+    return await client.query(text, params);
+  } finally {
+    client.release();
+  }
+}
 
-module.exports = db;
+async function initDb() {
+  await query(`
+    CREATE TABLE IF NOT EXISTS measurements (
+      id        SERIAL PRIMARY KEY,
+      engine    TEXT NOT NULL,
+      template  TEXT NOT NULL,
+      data      TEXT NOT NULL,
+      result    TEXT,
+      duration_ms DOUBLE PRECISION NOT NULL,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+}
+
+module.exports = { query, initDb };
