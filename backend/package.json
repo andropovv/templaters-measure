@@ -1,0 +1,33 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "test": "jest"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "better-sqlite3": "^12.10.0",
+    "cors": "^2.8.6",
+    "ejs": "^6.0.1",
+    "eta": "^4.6.0",
+    "express": "^5.2.1",
+    "handlebars": "^4.7.9",
+    "lodash": "^4.18.1",
+    "mustache": "^4.2.0",
+    "nunjucks": "^3.2.4"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/supertest": "^7.2.0",
+    "jest": "^30.4.2",
+    "supertest": "^7.2.2",
+    "ts-jest": "^29.4.11"
+  }
+}
